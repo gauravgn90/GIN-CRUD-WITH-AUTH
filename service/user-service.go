@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"gauravgn90/gin-crud-with-auth/v2/connection"
 	"gauravgn90/gin-crud-with-auth/v2/model"
+	"gauravgn90/gin-crud-with-auth/v2/utility"
 
+	"github.com/jinzhu/gorm"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -22,13 +24,10 @@ func New() UserService {
 }
 
 func (service *UserServiceImpl) Update(id int, user model.User) error {
-
-	db := connection.GetDB()
-
-	resultChan := make(chan sql.Result)
+	resultChan := make(chan interface{})
 	errorChan := make(chan error)
 
-	worker := NewWorker(db)
+	worker := NewWorker()
 	worker.Start()
 
 	worker.JobQueue <- Job{
@@ -42,22 +41,17 @@ func (service *UserServiceImpl) Update(id int, user model.User) error {
 	select {
 	case err := <-errorChan:
 		return err
-	case record := <-resultChan:
-		_, err := record.RowsAffected()
-		if err != nil {
-			return err
-		}
+	case <-resultChan:
 		return nil
 	}
 }
 
-func UpdateUser(user model.User) error {
-	db := connection.GetDB()
+func UpdateUser(user model.UserUpdate) error {
 
 	resultChan := make(chan sql.Result)
 	errorChan := make(chan error)
 
-	worker := NewWorker(db)
+	worker := NewWorker()
 	worker.Start()
 
 	worker.JobQueue <- Job{
@@ -81,12 +75,10 @@ func UpdateUser(user model.User) error {
 
 func (service *UserServiceImpl) Delete(id int) error {
 
-	db := connection.GetDB()
-
 	resultChan := make(chan sql.Result)
 	errorChan := make(chan error)
 
-	worker := NewWorker(db)
+	worker := NewWorker()
 	worker.Start()
 
 	worker.JobQueue <- Job{
@@ -109,12 +101,10 @@ func (service *UserServiceImpl) Delete(id int) error {
 
 func (service *UserServiceImpl) SaveUser(user model.User) (model.User, error) {
 
-	db := connection.GetDB()
-
-	resultChan := make(chan sql.Result)
+	resultChan := make(chan interface{})
 	errorChan := make(chan error)
 
-	worker := NewWorker(db)
+	worker := NewWorker()
 	worker.Start()
 
 	worker.JobQueue <- Job{
@@ -128,22 +118,17 @@ func (service *UserServiceImpl) SaveUser(user model.User) (model.User, error) {
 	case err := <-errorChan:
 		return model.User{}, err
 	case record := <-resultChan:
-		lastInsertId, err := record.LastInsertId()
-		if err != nil {
-			return model.User{}, err
-		}
+		lastInsertId := record.(int)
 		user.Id = int(lastInsertId)
 		return user, nil
 	}
 }
 
 func (service *UserServiceImpl) FindAll() ([]model.User, error) {
-	db := connection.GetDB()
-
 	resultChan := make(chan []model.User)
 	errorChan := make(chan error)
 
-	worker := NewWorker(db)
+	worker := NewWorker()
 	worker.Start()
 
 	worker.JobQueue <- Job{
@@ -163,7 +148,7 @@ func (service *UserServiceImpl) FindAll() ([]model.User, error) {
 type Job struct {
 	Type       string
 	Id         int
-	User       model.User
+	User       model.UserType
 	ResultChan interface{}
 	ErrorChan  chan<- error
 }
@@ -172,7 +157,7 @@ type Worker struct {
 	JobQueue chan Job
 }
 
-func NewWorker(db *sql.DB) *Worker {
+func NewWorker() *Worker {
 	return &Worker{JobQueue: make(chan Job)}
 }
 
@@ -189,13 +174,14 @@ func (w *Worker) process() {
 	for job := range w.JobQueue {
 		switch job.Type {
 		case "save":
-			w.handleSaveUserJob(db, job, job.ResultChan.(chan sql.Result))
+			w.handleSaveUserJob(db, job, job.ResultChan.(chan interface{}))
 		case "find":
 			w.handleFindAllUsersJob(db, job, job.ResultChan.(chan []model.User))
-		case "delete":
-			w.handleDeleteUserJob(db, job, job.ResultChan.(chan sql.Result))
 		case "update":
-			w.handleUpdateUserJob(db, job, job.ResultChan.(chan sql.Result))
+			w.handleUpdateUserJob(db, job, job.ResultChan.(chan interface{}))
+			/*case "delete":
+			w.handleDeleteUserJob(db, job, job.ResultChan.(chan sql.Result))
+			*/
 
 		}
 		// switch resultChan := job.ResultChan.(type) {
@@ -208,96 +194,80 @@ func (w *Worker) process() {
 	}
 }
 
-func (w *Worker) handleSaveUserJob(db *sql.DB, job Job, resultChan chan<- sql.Result) {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(job.User.Password), bcrypt.DefaultCost)
+func (w *Worker) handleSaveUserJob(db *gorm.DB, job Job, resultChan chan<- interface{}) {
+	user := job.User.(model.User)
+	if err := db.Where("username = ?", user.Username).First(&user).Error; err == nil {
+		job.ErrorChan <- utility.NewCustomError(400, "username already registered")
+		close(resultChan)
+		close(job.ErrorChan)
+		return
+	}
+	if err := db.Where("email = ?", user.Email).First(&user).Error; err == nil {
+		job.ErrorChan <- utility.NewCustomError(400, "e-mail already registered")
+		close(resultChan)
+		close(job.ErrorChan)
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		job.ErrorChan <- err
 		close(resultChan)
 		close(job.ErrorChan)
 		return
 	}
-	job.User.Password = string(hashedPassword)
-	stmt, err := db.Prepare("INSERT INTO users (name, username, email, password) VALUES (?, ?, ?, ?)")
-	if err != nil {
-		job.ErrorChan <- err
-		close(resultChan)
-		close(job.ErrorChan)
-		return
-	}
-	defer stmt.Close()
-	result, err := stmt.Exec(job.User.Name, job.User.Username, job.User.Email, job.User.Password)
-	if err != nil {
-		job.ErrorChan <- err
+	user.Password = string(hashedPassword)
+	// prepare statement with gorm
+	db = db.Create(&user)
+	if db.Error != nil {
+		job.ErrorChan <- db.Error
 	} else {
-		resultChan <- result
+		resultChan <- user.Id
 	}
 	close(resultChan)
 	close(job.ErrorChan)
 }
 
-func (w *Worker) handleUpdateUserJob(db *sql.DB, job Job, resultChan chan<- sql.Result) {
-	stmt, err := db.Prepare("UPDATE users SET name = ?, username = ?, email = ?, password = ? WHERE id = ?")
-	if err != nil {
-		job.ErrorChan <- err
-		close(resultChan)
-		close(job.ErrorChan)
-		return
-	}
-	defer stmt.Close()
-	result, err := stmt.Exec(job.User.Name, job.User.Username, job.User.Email, job.User.Password, job.Id)
-	if err != nil {
-		job.ErrorChan <- err
+func (w *Worker) handleUpdateUserJob(db *gorm.DB, job Job, resultChan chan<- interface{}) {
+
+	db = db.Model(&model.UserUpdate{}).Where("id = ?", job.Id).Updates(&job.User)
+	if db.Error != nil {
+		job.ErrorChan <- db.Error
 	} else {
-		resultChan <- result
+		resultChan <- db.RowsAffected
 	}
 	close(resultChan)
 	close(job.ErrorChan)
 }
 
-func (w *Worker) handleDeleteUserJob(db *sql.DB, job Job, resultChan chan<- sql.Result) {
-	stmt, err := db.Prepare("DELETE FROM users WHERE id = ?")
-	if err != nil {
-		job.ErrorChan <- err
-		close(resultChan)
-		close(job.ErrorChan)
-		return
-	}
-	defer stmt.Close()
-	result, err := stmt.Exec(job.Id)
-	if err != nil {
-		job.ErrorChan <- err
-	} else {
-		resultChan <- result
-	}
-	close(resultChan)
-	close(job.ErrorChan)
-}
-
-func (w *Worker) handleFindAllUsersJob(db *sql.DB, job Job, resultChan chan<- []model.User) {
-	rows, err := db.Query("SELECT * FROM users LIMIT 10")
-	if err != nil {
-		job.ErrorChan <- err
-		return
-	}
-	defer rows.Close()
-
-	var users []model.User
-	for rows.Next() {
-		var user model.User
-		err := rows.Scan(&user.Id, &user.Name, &user.Username, &user.Email, &user.Password)
+/*
+	func (w *Worker) handleDeleteUserJob(db *gorm.DB, job Job, resultChan chan<- sql.Result) {
+		stmt, err := db.Prepare("DELETE FROM users WHERE id = ?")
 		if err != nil {
 			job.ErrorChan <- err
+			close(resultChan)
+			close(job.ErrorChan)
 			return
 		}
-		users = append(users, user)
+		defer stmt.Close()
+		result, err := stmt.Exec(job.Id)
+		if err != nil {
+			job.ErrorChan <- err
+		} else {
+			resultChan <- result
+		}
+		close(resultChan)
+		close(job.ErrorChan)
 	}
-
-	if err := rows.Err(); err != nil {
+*/
+func (w *Worker) handleFindAllUsersJob(db *gorm.DB, job Job, resultChan chan<- []model.User) {
+	var users []model.User
+	err := db.Limit(10).Find(&users).Error
+	if err != nil {
 		job.ErrorChan <- err
-		return
+	} else {
+		resultChan <- users
 	}
-
-	resultChan <- users
 	close(resultChan)
 	close(job.ErrorChan)
 }
