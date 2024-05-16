@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"gauravgn90/gin-crud-with-auth/v2/model"
 	"gauravgn90/gin-crud-with-auth/v2/utility"
 	"net/http"
@@ -13,10 +14,21 @@ import (
 
 // Login User
 func Login(c *gin.Context) {
+	errChan := make(chan error)
+	go loginUser(c, errChan)
+	err := <-errChan
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, err.Error()))
+		return
+	}
 
+}
+
+// Private function to login user
+func loginUser(c *gin.Context, errChan chan<- error) {
 	var input model.UserLogin
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, utility.PrepareJsonResponse("error", http.StatusBadRequest, "Invalid request payload"))
+		errChan <- err
 		return
 	}
 
@@ -25,27 +37,28 @@ func Login(c *gin.Context) {
 	err := db.GetDB().Where("username = ?", input.Username).First(&user).Error
 
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, utility.PrepareJsonResponse("error", http.StatusUnauthorized, err.Error()))
+		errChan <- err
 		return
 	}
 
 	if user.Id == 0 {
-		c.JSON(http.StatusUnauthorized, utility.PrepareJsonResponse("error", http.StatusUnauthorized, "User not found"))
+		errChan <- errors.New("user not found")
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, utility.PrepareJsonResponse("error", http.StatusUnauthorized, "Invalid password"))
+		errChan <- errors.New("invalid password")
 		return
 	}
 
 	token, err := utility.GenerateToken(c, user.Id, user.Username)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, "Failed to generate token"))
+		errChan <- errors.New("error generating token")
 		return
 	}
 
-	c.JSON(http.StatusOK, utility.PrepareJsonResponse("success", http.StatusOK, gin.H{"token": token}))
+	c.IndentedJSON(http.StatusOK, utility.PrepareJsonResponse("success", http.StatusOK, gin.H{"token": token}))
+	close(errChan)
 }
 
 // Logout User

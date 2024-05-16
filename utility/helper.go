@@ -9,20 +9,20 @@ import (
 	"github.com/golang-jwt/jwt"
 )
 
-// CustomError type includes an error code and a message
-type CustomError struct {
+// ApiResponseError type includes an error code and a message
+type ApiResponseError struct {
 	Code    int
 	Message string
 }
 
-// Implement the Error method for the CustomError type
-func (e *CustomError) Error() string {
+// Implement the Error method for the ApiResponseError type
+func (e *ApiResponseError) Error() string {
 	return fmt.Sprintf("Error %d: %s", e.Code, e.Message)
 }
 
-// Function to create a new CustomError
-func NewCustomError(code int, message string) *CustomError {
-	return &CustomError{
+// Function to create a new ApiResponseError
+func NewApiResponseError(code int, message string) *ApiResponseError {
+	return &ApiResponseError{
 		Code:    code,
 		Message: message,
 	}

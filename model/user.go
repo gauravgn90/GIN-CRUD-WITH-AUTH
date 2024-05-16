@@ -13,9 +13,9 @@ type User struct {
 	DeletedAt *time.Time `json:"-"`
 }
 type UserUpdate struct {
-	Name     string  `json:"name"  binding:"required,min=3,max=50"`
-	Username *string `json:"username"  binding:"required,min=5,max=50"`
-	Email    *string `json:"email"  binding:"required,email"`
+	Name     string `json:"name"  binding:"required,min=3,max=50"`
+	Username string `json:"username"  binding:"required,min=5,max=50"`
+	Email    string `json:"email"  binding:"required,email"`
 }
 
 type UserResponse struct {

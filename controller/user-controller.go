@@ -19,7 +19,7 @@ var (
 
 type UserController interface {
 	SaveUser(ctx *gin.Context) (model.User, int, error)
-	FindAll() ([]model.User, error)
+	FindAll(c *gin.Context) ([]model.User, error)
 	Delete(ctx *gin.Context) error
 	Update(ctx *gin.Context) error
 }
@@ -29,8 +29,27 @@ type UserControllerImpl struct {
 }
 
 // FindAll implements UserController.
-func (u UserControllerImpl) FindAll() ([]model.User, error) {
-	users, err := u.service.FindAll()
+func (u UserControllerImpl) FindAll(c *gin.Context) ([]model.User, error) {
+	var start = 0
+	var limit = 10
+
+	if c.Query("start") != "" {
+		start, _ = strconv.Atoi(c.Query("start"))
+	}
+	if c.Query("limit") != "" {
+		limit, _ = strconv.Atoi(c.Query("limit"))
+	}
+
+	if start <= 0 {
+		start = 0
+		start = (start * limit)
+	}
+
+	if limit <= 0 {
+		limit = 10
+	}
+
+	users, err := u.service.FindAll(start, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -45,10 +64,10 @@ func (u UserControllerImpl) SaveUser(ctx *gin.Context) (model.User, int, error) 
 	}
 
 	user, err := u.service.SaveUser(user)
-	var customErr *utility.CustomError
+	var customErr *utility.ApiResponseError
 
 	if ok := errors.As(err, &customErr); ok {
-		// It's a CustomError, we can access the code and message
+		// It's a ApiResponseError, we can access the code and message
 		return model.User{}, customErr.Code, customErr
 	}
 
@@ -79,7 +98,7 @@ func (u UserControllerImpl) Update(ctx *gin.Context) error {
 	if err != nil {
 		return err
 	}
-	var user model.User
+	var user model.UserUpdate
 	if err := ctx.BindJSON(&user); err != nil {
 		return err
 	}
@@ -100,12 +119,7 @@ func New(service service.UserService) UserController {
 // Get Users
 func GetUsers(c *gin.Context) {
 	fmt.Printf("User Id passed via middleware : %d\n", c.MustGet("userID"))
-	defer func() {
-		if r := recover(); r != nil {
-			c.IndentedJSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, "Internal Server Error"))
-		}
-	}()
-	users, err := userController.FindAll()
+	users, err := userController.FindAll(c)
 	if err != nil {
 		c.IndentedJSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, err.Error()))
 		return
@@ -153,6 +167,13 @@ func DeleteUser(c *gin.Context) {
 // Update User
 func UpdateUser(c *gin.Context) {
 	err := userController.Update(c)
+	var customErr *utility.ApiResponseError
+
+	if ok := errors.As(err, &customErr); ok {
+		// It's a ApiResponseError, we can access the code and message
+		c.IndentedJSON(customErr.Code, utility.PrepareJsonResponse("error", customErr.Code, customErr.Message))
+		return
+	}
 	if err != nil {
 		c.IndentedJSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, err.Error()))
 		return

@@ -1,6 +1,7 @@
 package connection
 
 import (
+	"fmt"
 	"gauravgn90/gin-crud-with-auth/v2/model"
 	"log"
 
@@ -54,5 +55,12 @@ func RunMigration() {
 	// Migrate the schema
 	if err := GetDB().AutoMigrate(&model.User{}).Error; err != nil {
 		// Handle the error
+		fmt.Println(err)
 	}
+
+	if err := GetDB().AutoMigrate(&model.Product{}).Error; err != nil {
+		// Handle the error
+		fmt.Println(err)
+	}
+
 }

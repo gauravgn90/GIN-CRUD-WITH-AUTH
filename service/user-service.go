@@ -12,9 +12,9 @@ import (
 
 type UserService interface {
 	SaveUser(user model.User) (model.User, error)
-	FindAll() ([]model.User, error)
+	FindAll(start, Limit int) ([]model.User, error)
 	Delete(id int) error
-	Update(id int, user model.User) error
+	Update(id int, user model.UserUpdate) error
 }
 
 type UserServiceImpl struct{}
@@ -23,7 +23,20 @@ func New() UserService {
 	return &UserServiceImpl{}
 }
 
-func (service *UserServiceImpl) Update(id int, user model.User) error {
+type Job struct {
+	Request    interface{}
+	Type       string
+	Id         int
+	User       model.UserType
+	ResultChan interface{}
+	ErrorChan  chan<- error
+}
+
+type Worker struct {
+	JobQueue chan Job
+}
+
+func (service *UserServiceImpl) Update(id int, user model.UserUpdate) error {
 	resultChan := make(chan interface{})
 	errorChan := make(chan error)
 
@@ -42,33 +55,6 @@ func (service *UserServiceImpl) Update(id int, user model.User) error {
 	case err := <-errorChan:
 		return err
 	case <-resultChan:
-		return nil
-	}
-}
-
-func UpdateUser(user model.UserUpdate) error {
-
-	resultChan := make(chan sql.Result)
-	errorChan := make(chan error)
-
-	worker := NewWorker()
-	worker.Start()
-
-	worker.JobQueue <- Job{
-		Type:       "update",
-		User:       user,
-		ResultChan: resultChan,
-		ErrorChan:  errorChan,
-	}
-
-	select {
-	case err := <-errorChan:
-		return err
-	case record := <-resultChan:
-		_, err := record.RowsAffected()
-		if err != nil {
-			return err
-		}
 		return nil
 	}
 }
@@ -124,7 +110,7 @@ func (service *UserServiceImpl) SaveUser(user model.User) (model.User, error) {
 	}
 }
 
-func (service *UserServiceImpl) FindAll() ([]model.User, error) {
+func (service *UserServiceImpl) FindAll(start, Limit int) ([]model.User, error) {
 	resultChan := make(chan []model.User)
 	errorChan := make(chan error)
 
@@ -132,6 +118,7 @@ func (service *UserServiceImpl) FindAll() ([]model.User, error) {
 	worker.Start()
 
 	worker.JobQueue <- Job{
+		Request:    struct{ Start, Limit int }{start, Limit},
 		Type:       "find",
 		ResultChan: resultChan,
 		ErrorChan:  errorChan,
@@ -143,18 +130,6 @@ func (service *UserServiceImpl) FindAll() ([]model.User, error) {
 	case users := <-resultChan:
 		return users, nil
 	}
-}
-
-type Job struct {
-	Type       string
-	Id         int
-	User       model.UserType
-	ResultChan interface{}
-	ErrorChan  chan<- error
-}
-
-type Worker struct {
-	JobQueue chan Job
 }
 
 func NewWorker() *Worker {
@@ -197,13 +172,13 @@ func (w *Worker) process() {
 func (w *Worker) handleSaveUserJob(db *gorm.DB, job Job, resultChan chan<- interface{}) {
 	user := job.User.(model.User)
 	if err := db.Where("username = ?", user.Username).First(&user).Error; err == nil {
-		job.ErrorChan <- utility.NewCustomError(400, "username already registered")
+		job.ErrorChan <- utility.NewApiResponseError(400, "username already registered")
 		close(resultChan)
 		close(job.ErrorChan)
 		return
 	}
 	if err := db.Where("email = ?", user.Email).First(&user).Error; err == nil {
-		job.ErrorChan <- utility.NewCustomError(400, "e-mail already registered")
+		job.ErrorChan <- utility.NewApiResponseError(400, "e-mail already registered")
 		close(resultChan)
 		close(job.ErrorChan)
 		return
@@ -230,14 +205,28 @@ func (w *Worker) handleSaveUserJob(db *gorm.DB, job Job, resultChan chan<- inter
 
 func (w *Worker) handleUpdateUserJob(db *gorm.DB, job Job, resultChan chan<- interface{}) {
 
-	db = db.Model(&model.UserUpdate{}).Where("id = ?", job.Id).Updates(&job.User)
+	user := model.User{}
+	db = db.Model(&user).Where("id = ?", job.Id).Updates(map[string]interface{}{
+		"name":     job.User.(model.UserUpdate).Name,
+		"username": job.User.(model.UserUpdate).Username,
+		"email":    job.User.(model.UserUpdate).Email,
+	})
 	if db.Error != nil {
 		job.ErrorChan <- db.Error
-	} else {
-		resultChan <- db.RowsAffected
+		close(job.ErrorChan) // Close error channel in case of error
+		return
 	}
-	close(resultChan)
-	close(job.ErrorChan)
+
+	if db.RowsAffected == 0 {
+		// No matching records found
+		job.ErrorChan <- utility.NewApiResponseError(400, "no matching records found")
+		close(job.ErrorChan) // Close error channel
+		return
+	}
+
+	resultChan <- db.RowsAffected
+	close(resultChan)    // Close result channel
+	close(job.ErrorChan) // Close error channel
 }
 
 /*
@@ -262,7 +251,9 @@ func (w *Worker) handleUpdateUserJob(db *gorm.DB, job Job, resultChan chan<- int
 */
 func (w *Worker) handleFindAllUsersJob(db *gorm.DB, job Job, resultChan chan<- []model.User) {
 	var users []model.User
-	err := db.Limit(10).Find(&users).Error
+	paginate := job.Request.(struct{ Start, Limit int })
+
+	err := db.Offset(paginate.Start).Limit(paginate.Limit).Find(&users).Error
 	if err != nil {
 		job.ErrorChan <- err
 	} else {
