@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	userService    service.UserService = service.New()
+	userService    service.UserService = service.NewUser()
 	userController UserController      = New(userService)
 )
 
@@ -26,6 +26,12 @@ type UserController interface {
 
 type UserControllerImpl struct {
 	service service.UserService
+}
+
+func New(service service.UserService) UserController {
+	return UserControllerImpl{
+		service: service,
+	}
 }
 
 // FindAll implements UserController.
@@ -110,18 +116,25 @@ func (u UserControllerImpl) Update(ctx *gin.Context) error {
 	return nil
 }
 
-func New(service service.UserService) UserController {
-	return UserControllerImpl{
-		service: service,
-	}
-}
-
 // Get Users
+// Add this in swagger
+//
+//	@Summary		Get Users
+//	@Description	Get Users
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Success		200	{object}	[]model.UserResponse	"Success"
+//	@Failure		400	{object}	[]model.SuccessResponse	"Error"
+//	@Failure		500	{object}	[]model.FailureResponse	"Error"
+//	@Router			/users [get]
+//	@Security		BearerAuth
 func GetUsers(c *gin.Context) {
 	fmt.Printf("User Id passed via middleware : %d\n", c.MustGet("userID"))
 	users, err := userController.FindAll(c)
+
 	if err != nil {
-		c.IndentedJSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, err.Error()))
+		c.IndentedJSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, err))
 		return
 	}
 	var userResponses []model.UserResponse
@@ -139,10 +152,25 @@ func GetUsers(c *gin.Context) {
 }
 
 // Create User
+// Add this in swagger
+//
+//	@Summary		Create User
+//	@Description	Create User
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//
+//	@Param			input	body		model.NewUser			true	"Create New User"
+//
+//	@Success		200		{object}	model.UserResponse		"Success"
+//	@Failure		400		{object}	model.FailureResponse	"Error"
+//	@Failure		500		{object}	model.FailureResponse	"Error"
+//	@Router			/users [post]
+//	@Security		BearerAuth
 func CreateUser(c *gin.Context) {
 	user, statusCode, err := userController.SaveUser(c)
 	if err != nil {
-		c.IndentedJSON(statusCode, utility.PrepareJsonResponse("error", statusCode, err.Error()))
+		c.IndentedJSON(statusCode, utility.PrepareJsonResponse("error", statusCode, err))
 		return
 	}
 	response := model.UserResponse{
@@ -158,7 +186,7 @@ func CreateUser(c *gin.Context) {
 func DeleteUser(c *gin.Context) {
 	err := userController.Delete(c)
 	if err != nil {
-		c.IndentedJSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, err.Error()))
+		c.IndentedJSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, err))
 		return
 	}
 	c.IndentedJSON(http.StatusOK, utility.PrepareJsonResponse("success", http.StatusOK, "User deleted successfully"))
@@ -175,7 +203,7 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.IndentedJSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, err.Error()))
+		c.IndentedJSON(http.StatusInternalServerError, utility.PrepareJsonResponse("error", http.StatusInternalServerError, err))
 		return
 	}
 	c.IndentedJSON(http.StatusOK, utility.PrepareJsonResponse("success", http.StatusOK, "User updated successfully"))

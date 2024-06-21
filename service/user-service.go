@@ -6,8 +6,8 @@ import (
 	"gauravgn90/gin-crud-with-auth/v2/model"
 	"gauravgn90/gin-crud-with-auth/v2/utility"
 
-	"github.com/jinzhu/gorm"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type UserService interface {
@@ -19,7 +19,7 @@ type UserService interface {
 
 type UserServiceImpl struct{}
 
-func New() UserService {
+func NewUser() UserService {
 	return &UserServiceImpl{}
 }
 

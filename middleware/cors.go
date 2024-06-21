@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"gauravgn90/gin-crud-with-auth/v2/logservice"
 	"gauravgn90/gin-crud-with-auth/v2/utility"
 	"log"
 	"net/http"
@@ -11,7 +12,10 @@ import (
 func Cors() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
-		log.Printf("Origin: %s", origin)
+		mp := make(map[string]string)
+		mp["origin"] = origin
+		mp["url"] = utility.GetEnv("FRONTEND_URL")
+		logservice.Info("Origin: %s", mp)
 		var url = utility.GetEnv("FRONTEND_URL")
 		if origin != url {
 			log.Printf("Origin not allowed: %s", origin)

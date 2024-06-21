@@ -1,0 +1,266 @@
+basePath: /api/v1
+definitions:
+  model.Data:
+    properties:
+      token:
+        type: string
+    type: object
+  model.FailureResponse:
+    properties:
+      data:
+        type: string
+      status:
+        default: error
+        type: string
+      status_code:
+        type: integer
+    type: object
+  model.NewUser:
+    properties:
+      email:
+        type: string
+      name:
+        maxLength: 50
+        minLength: 3
+        type: string
+      password:
+        maxLength: 50
+        minLength: 5
+        type: string
+      username:
+        maxLength: 50
+        minLength: 5
+        type: string
+    required:
+    - email
+    - name
+    - password
+    - username
+    type: object
+  model.SuccessResponse:
+    properties:
+      data:
+        type: string
+      status:
+        type: string
+      status_code:
+        type: integer
+    type: object
+  model.UserLogin:
+    properties:
+      password:
+        maxLength: 50
+        minLength: 5
+        type: string
+      username:
+        maxLength: 50
+        minLength: 5
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  model.UserResponse:
+    properties:
+      email:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      username:
+        type: string
+    type: object
+  model.UserResponseFailure:
+    properties:
+      data:
+        type: string
+      status:
+        type: string
+      status_code:
+        type: integer
+    type: object
+  model.UserResponseLogoutInternalServerFailure:
+    properties:
+      data:
+        default: Internal Server Error
+        type: string
+      status:
+        default: error
+        type: string
+      status_code:
+        default: 500
+        type: integer
+    type: object
+  model.UserResponseLogoutSuccess:
+    properties:
+      data:
+        default: Logged out successfully
+        type: string
+      status:
+        default: success
+        type: string
+      status_code:
+        default: 200
+        type: integer
+    type: object
+  model.UserResponseLogoutUnAuthorizedFailure:
+    properties:
+      data:
+        default: Authorization header is required
+        type: string
+      status:
+        default: error
+        type: string
+      status_code:
+        default: 400
+        type: integer
+    type: object
+  model.UserResponseSuccess:
+    properties:
+      data:
+        $ref: '#/definitions/model.Data'
+      status:
+        type: string
+      status_code:
+        type: integer
+    type: object
+host: localhost:8083
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: This is simple CRUD API with JWT Auth.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: GIN CRUD AND AUTH API
+  version: "1.0"
+paths:
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Login User
+      parameters:
+      - description: User Login
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/model.UserLogin'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/model.UserResponseSuccess'
+        "400":
+          description: Error
+          schema:
+            $ref: '#/definitions/model.UserResponseFailure'
+        "500":
+          description: Error
+          schema:
+            $ref: '#/definitions/model.UserResponseFailure'
+      summary: Login User
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Logout User
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/model.UserResponseLogoutSuccess'
+        "400":
+          description: Error
+          schema:
+            $ref: '#/definitions/model.UserResponseLogoutUnAuthorizedFailure'
+        "500":
+          description: Error
+          schema:
+            $ref: '#/definitions/model.UserResponseLogoutInternalServerFailure'
+      security:
+      - BearerAuth: []
+      - BearerAuth: []
+      summary: Logout User
+      tags:
+      - auth
+  /users:
+    get:
+      consumes:
+      - application/json
+      description: Get Users
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            items:
+              $ref: '#/definitions/model.UserResponse'
+            type: array
+        "400":
+          description: Error
+          schema:
+            items:
+              $ref: '#/definitions/model.SuccessResponse'
+            type: array
+        "500":
+          description: Error
+          schema:
+            items:
+              $ref: '#/definitions/model.FailureResponse'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Get Users
+      tags:
+      - users
+    post:
+      consumes:
+      - application/json
+      description: Create User
+      parameters:
+      - description: Create New User
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/model.NewUser'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/model.UserResponse'
+        "400":
+          description: Error
+          schema:
+            $ref: '#/definitions/model.FailureResponse'
+        "500":
+          description: Error
+          schema:
+            $ref: '#/definitions/model.FailureResponse'
+      security:
+      - BearerAuth: []
+      summary: Create User
+      tags:
+      - users
+securityDefinitions:
+  BearerAuth:
+    description: '"Enter your bearer token in the format ''Bearer {token}''"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

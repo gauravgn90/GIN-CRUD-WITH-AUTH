@@ -3,6 +3,7 @@ package utility
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -11,8 +12,8 @@ import (
 
 // ApiResponseError type includes an error code and a message
 type ApiResponseError struct {
-	Code    int
-	Message string
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
 // Implement the Error method for the ApiResponseError type
@@ -36,8 +37,9 @@ type Credentials struct {
 }
 
 type Claims struct {
-	Username string `json:"username"`
-	UserID   int    `json:"user_id"`
+	Username string   `json:"username"`
+	UserID   int      `json:"user_id"`
+	Roles    []string `json:"roles"`
 	jwt.StandardClaims
 }
 
@@ -46,12 +48,19 @@ func GetEnv(key string) string {
 }
 
 func GenerateToken(c *gin.Context, Id int, Username string) (token string, err error) {
-	expirationTime := time.Now().Add(24 * time.Hour)
+	expireInHour, _ := strconv.Atoi(os.Getenv("TOKEN_EXPIRE_IN_MS"))
+	expirationTime := time.Now().Add(time.Duration(expireInHour) * time.Millisecond)
 	claims := &Claims{
 		UserID:   Id,
 		Username: Username,
+		Roles:    []string{"admin", "editor"},
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expirationTime.Unix(),
+			Audience:  "http://localhost:8083",
+			Issuer:    "http://localhost:8083",
+			IssuedAt:  time.Now().Unix(),
+			NotBefore: time.Now().Unix(),
+			Subject:   "auth",
 		},
 	}
 
